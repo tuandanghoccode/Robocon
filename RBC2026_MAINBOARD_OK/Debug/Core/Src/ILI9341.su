@@ -1,0 +1,11 @@
+../Core/Src/ILI9341.c:147:13:ILI9341_WriteCmd	16	static
+../Core/Src/ILI9341.c:156:13:ILI9341_WriteData	16	static
+../Core/Src/ILI9341.c:164:13:ILI9341_SetWindow	32	static
+../Core/Src/ILI9341.c:192:6:ILI9341_Init	72	static
+../Core/Src/ILI9341.c:276:6:ILI9341_DrawRect	32	static
+../Core/Src/ILI9341.c:288:6:ILI9341_DrawImage	24	static
+../Core/Src/ILI9341.c:306:6:ILI9341_FillRect	104	static
+../Core/Src/ILI9341.c:341:6:ILI9341_DrawFrame	16	static
+../Core/Src/ILI9341.c:353:6:Draw_BoundingBox	32	static
+../Core/Src/ILI9341.c:362:6:LCD_DrawChar	48	static
+../Core/Src/ILI9341.c:378:6:LCD_PrintString	24	static
