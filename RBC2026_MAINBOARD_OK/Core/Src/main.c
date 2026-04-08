@@ -475,7 +475,7 @@ int main(void)
 	  Error_Handler();
   }
   I2C1_Scan();
-
+//dmm
   TxHeader.StdId = 0x123;
   TxHeader.RTR = CAN_RTR_DATA;
   TxHeader.IDE = CAN_ID_STD;
