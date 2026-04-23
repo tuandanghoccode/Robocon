@@ -1,0 +1,19 @@
+/.metadata/
+# Bỏ qua thư mục Debug và Release
+Debug/
+Release/
+
+# Bỏ qua các file thực thi và file tạm của trình biên dịch
+*.elf
+*.list
+*.map
+*.o
+*.su
+*.cyclo
+*.d
+
+# Bỏ qua các file cài đặt cá nhân của IDE
+.settings/
+*.launch
+.sonarlint/
+

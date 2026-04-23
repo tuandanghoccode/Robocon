@@ -41,6 +41,8 @@ typedef struct{
 	volatile long xung;
 	volatile long xung_trc;
 	volatile long xung_tmp;
+	volatile long target_xung; // Thêm biến lưu vị trí mục tiêu
+	volatile uint8_t is_holding; // Cờ báo trạng thái đang giữ vị trí
 }Encoder_data;
 
 //Pid_data.Kd;
@@ -72,9 +74,9 @@ PID_CONTROL Pid;
 /* Private variables ---------------------------------------------------------*/
 CAN_HandleTypeDef hcan;
 
-TIM_HandleTypeDef htim2;//pwm    **TIM_HandleTypeDef : xử lí lỗi
-TIM_HandleTypeDef htim3;//encoder
-TIM_HandleTypeDef htim4;//timer
+TIM_HandleTypeDef htim2;
+TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim4;
 
 UART_HandleTypeDef huart2;
 
@@ -106,14 +108,16 @@ static void MX_TIM4_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-int id=4;
+//ID CHIP ////////////////////////////////////////////////////////////////////////////////////////////////////////
+int id=6;
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 uint8_t l=0;
 //uint8_t addr[6]={0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
     if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
         if (RxHeader.StdId == 0x123) {
-        	Setpoint = (RxData[6]-7)*(RxData[id-1]-100);
+        	Setpoint = (RxData[6]-7.5)*(RxData[id-1]-100);
         	l=1-l;
 					if(l)HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 					if(Setpoint>=MAX_SPEED)Setpoint=MAX_SPEED;
@@ -123,21 +127,65 @@ void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
 }
 
 void PID_Control(PID_CONTROL *pid, int setpoint){
-	pid->pEncoder_data->speed =(pid->pEncoder_data->xung-pid->pEncoder_data->xung_trc)/(1000*Delta_t)*60;// gán speed = (xung hiện tại - xung trước )/(1000*Delta_t)*60   => lấy rpm
+	static int prev_setpoint_input = 0;
+	int active_setpoint = setpoint;
+
+	// Tính tốc độ hiện tại
+	pid->pEncoder_data->speed =(pid->pEncoder_data->xung-pid->pEncoder_data->xung_trc)/(1000.0f*Delta_t)*60.0f;
 	pid->pPid_data->gtht = pid->pEncoder_data->speed;
-	pid->pPid_data->er = setpoint - pid->pPid_data->gtht;
+
+	// Kỹ thuật PID Cascade: Khi tốc độ yêu cầu = 0, chuyển sang PID Vị trí
+	if (setpoint == 0) {
+		// Vừa chuyển từ trạng thái chạy sang dừng -> chốt vị trí hiện tại
+		if (prev_setpoint_input != 0) {
+			pid->pEncoder_data->target_xung = pid->pEncoder_data->xung;
+			pid->pEncoder_data->is_holding = 1;
+		}
+		
+		if (pid->pEncoder_data->is_holding) {
+			long pos_error = pid->pEncoder_data->target_xung - pid->pEncoder_data->xung;
+			
+			// Dùng bộ điều khiển P (Proportional) cho vị trí để sinh ra setpoint vận tốc
+			float K_pos = 1.5f; // Hệ số P vị trí - có thể tăng/giảm để phản ứng mạnh/yếu
+			active_setpoint = (int)(pos_error * K_pos);
+			
+			// Giới hạn vận tốc bù trừ để không giật mạnh (Max tốc bù là 100, max speed xe là 333)
+			if (active_setpoint > 100) active_setpoint = 100;
+			if (active_setpoint < -100) active_setpoint = -100;
+			
+			// Deadband (chấp nhận sai số nhỏ để tránh dao động liên tục)
+			if (pos_error >= -2 && pos_error <= 2) {
+				active_setpoint = 0;
+				pid->pPid_data->i = 0; // Xóa tích phân để động cơ nghỉ ngơi thực sự
+			}
+		}
+	} else {
+		// Đang có lệnh chạy tốc độ bình thường
+		pid->pEncoder_data->is_holding = 0;
+	}
+
+	// Reset tích phân khi đảo chiều (active_setpoint đổi dấu)
+	static int prev_active_setpoint = 0;
+	if ((active_setpoint > 0 && prev_active_setpoint < 0) || (active_setpoint < 0 && prev_active_setpoint > 0)){
+		pid->pPid_data->i = 0;
+	}
+
+	prev_setpoint_input = setpoint;
+	prev_active_setpoint = active_setpoint;
+
+	// --- Tính toán vòng PID Vận Tốc ---
+	pid->pPid_data->er = active_setpoint - pid->pPid_data->gtht;
 	pid->pPid_data->i += pid->pPid_data->er * Delta_t;
 
-  if(pid->pPid_data->i > 3000) pid->pPid_data->i = 3000; // chống tích phân bão hòa
-	else if(pid->pPid_data->i < -3000) pid->pPid_data->i = -3000; // chống tích phân bão hòa
+	if(pid->pPid_data->i > 3000) pid->pPid_data->i = 3000;   // chống tích phân bão hòa
+	else if(pid->pPid_data->i < -3000) pid->pPid_data->i = -3000;
 
-	if(pid->pPid_data->er==0&&(id==1||id==2)) pid->pPid_data->i=0;
 	pid->pPid_data->d = (pid->pPid_data->er - pid->pPid_data->pre_er)/Delta_t;
-	output = MAX_PWM*(pid->pPid_data->Kp * pid->pPid_data->er + pid->pPid_data->Kd * pid->pPid_data->d + pid->pPid_data->Ki * pid->pPid_data->i)/MAX_SPEED; // 333 là max speed
+	output = MAX_PWM*(pid->pPid_data->Kp * pid->pPid_data->er + pid->pPid_data->Kd * pid->pPid_data->d + pid->pPid_data->Ki * pid->pPid_data->i)/MAX_SPEED;
 	pid->pEncoder_data->xung_trc = pid->pEncoder_data->xung;
 	pid->pPid_data->pre_er = pid->pPid_data->er;
 	if(output>MAX_PWM)output=MAX_PWM;
-	else if(output<-MAX_PWM)output=-MAX_PWM; // max = 7199
+	else if(output<-MAX_PWM)output=-MAX_PWM;
 }
  // PID_Control cho ra output
 void quay_thuan(){
@@ -159,37 +207,17 @@ void dk(){
 }
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim->Instance==TIM4){
-		//tinh toan xung encoder lien tuc trong timer 10ms (tran so se tu dong hoan)
-		uint16_t tmp = __HAL_TIM_GET_COUNTER(&htim3);
-		int16_t delta = (int16_t)(tmp - (uint16_t)Pid.pEncoder_data->xung_tmp);
+	if(htim->Instance == TIM4){
+		// Đọc encoder bằng delta method — xử lý cả tràn số tự động nhờ ép kiểu int16_t
+		uint16_t cur = __HAL_TIM_GET_COUNTER(&htim3);
+		int16_t delta = (int16_t)(cur - (uint16_t)Pid.pEncoder_data->xung_tmp);
 		Pid.pEncoder_data->xung += delta;
-		Pid.pEncoder_data->xung_tmp = tmp; // luu lai cho lan sau
-		
+		Pid.pEncoder_data->xung_tmp = cur;
+
 		PID_Control(&Pid, Setpoint);
 		dk();
 	}
 }
-
-// void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-
-// 	if(htim->Instance==TIM4){
-// 		PID_Control(&Pid, Setpoint);
-// 		dk();
-// 	}
-// }  << VER1
-
-
-// void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim){
-// 	if(htim->Instance==TIM3){
-// 		int16_t tmp = (int16_t)(__HAL_TIM_GET_COUNTER(&htim3));
-// 		Pid.pEncoder_data->xung =tmp  + Pid.pEncoder_data->xung_tmp;
-// 		if(tmp>29999||tmp<-29999) {
-// 			Pid.pEncoder_data->xung_tmp = Pid.pEncoder_data->xung;
-// 			__HAL_TIM_SET_COUNTER(&htim3, 0);
-// 		}
-// 	}
-// } ko dung nua tai (gemini bao the :)))))
 
 void PID_CONTROL_INIT(PID_CONTROL *Pid, Pid_data *pid_data, Encoder_data *en_data){
 	Pid->pEncoder_data = en_data;
@@ -206,8 +234,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-	Pid_data			p_data={0, 0, 0, 0.6, 0.001,10, 0,0};//Kp=0.6, Ki=10, Kd=0.001
-	Encoder_data		e_data={0, 0, 0, 0};
+	Pid_data			p_data={0, 0, 0, 0.8, 0.001,10, 0,0};//Kp=0.6, Ki=10, Kd=0.001
+	Encoder_data		e_data={0, 0, 0, 0, 0, 0};
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -235,22 +263,14 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
+	// Khởi động CAN
+	if (HAL_CAN_Start(&hcan) != HAL_OK) Error_Handler();
 	HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
-	if (HAL_CAN_Start(&hcan) != HAL_OK) {
-		Error_Handler();
-	}
-
-//	HAL_CAN_Stop(&hcan);
-//
-//	if(id==1)hcan.Init.Mode = CAN_MODE_NORMAL;
-//	else hcan.Init.Mode = CAN_MODE_SILENT;
-//	HAL_CAN_Init(&hcan);
-//	HAL_CAN_Start(&hcan);
 
 	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_1);
 	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_2);
 	PID_CONTROL_INIT(&Pid, &p_data, &e_data);
-	HAL_TIM_Encoder_Start(&htim3,TIM_CHANNEL_ALL); // HAL_TIM_Encoder_Start_IT
+	HAL_TIM_Encoder_Start(&htim3,TIM_CHANNEL_ALL); // Dùng Start thường, không cần IT
 	HAL_TIM_Base_Start_IT(&htim4);
 
   /* USER CODE END 2 */
@@ -262,9 +282,13 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
+
+
+
 //	  Setpoint=150;
-	  HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-	  HAL_Delay(500);
+	  // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+	  // HAL_Delay(200);
   }
   /* USER CODE END 3 */
 }
@@ -325,12 +349,7 @@ static void MX_CAN_Init(void)
   /* USER CODE END CAN_Init 1 */
   hcan.Instance = CAN1;
   hcan.Init.Prescaler = 4;
-//  hcan.Init.Mode = CAN_MODE_NORMAL;
-//  if (id == 6) {
-//		hcan.Init.Mode = CAN_MODE_NORMAL;
-//	} else {
-		hcan.Init.Mode = CAN_MODE_SILENT;
-//	}
+  hcan.Init.Mode = CAN_MODE_NORMAL;
   hcan.Init.SyncJumpWidth = CAN_SJW_1TQ;
   hcan.Init.TimeSeg1 = CAN_BS1_13TQ;
   hcan.Init.TimeSeg2 = CAN_BS2_2TQ;
@@ -408,7 +427,7 @@ static void MX_TIM2_Init(void)
   sConfigOC.OCMode = TIM_OCMODE_PWM1;
   sConfigOC.Pulse = 0;
   sConfigOC.OCPolarity = TIM_OCPOLARITY_HIGH;
-  sConfigOC.OCFastMode = TIM_OCFAST_DISABLE;
+  sConfigOC.OCFastMode = TIM_OCFAST_ENABLE;
   if (HAL_TIM_PWM_ConfigChannel(&htim2, &sConfigOC, TIM_CHANNEL_1) != HAL_OK)
   {
     Error_Handler();
@@ -456,7 +475,7 @@ static void MX_TIM3_Init(void)
   sConfig.IC2Polarity = TIM_ICPOLARITY_FALLING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC2Filter = 0;
+  sConfig.IC2Filter = 4;
   if (HAL_TIM_Encoder_Init(&htim3, &sConfig) != HAL_OK)
   {
     Error_Handler();

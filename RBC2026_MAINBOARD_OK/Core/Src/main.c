@@ -49,12 +49,12 @@ extern int current_error_x;
 
 
 typedef struct{
-	int goc_ht[2];
-	int goc_trc[2];
-	int delta_goc[2];
-	int goc_tong[2];
-	int goc_offset[2];
-	int goc_ok[2];
+	float goc_ht[2];
+	float goc_trc[2];
+	float delta_goc[2];
+	float goc_tong[2];
+	float goc_offset[2];
+	float goc_ok[2];
 }IMU;
 IMU BNO055={};
 /* USER CODE END PD */
@@ -62,8 +62,10 @@ IMU BNO055={};
 /* Private macro -------------------------------------------------------------*/
 /* USER CODE BEGIN PM */
 uint8_t TxData[8] = {100,100,100,100,100,100,100,100};
+uint8_t TxData2[8] = {100,100,100,100,100,100,100,100}; // Frame 2 cho PID Board 2 (StdId=0x124)
 uint32_t TxMailbox;
 CAN_TxHeaderTypeDef TxHeader;
+CAN_TxHeaderTypeDef TxHeader2; // Header cho frame 2
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
@@ -182,22 +184,24 @@ void Update_Display_Data(void) {
 //		}
 
 }
-void Read_IMU(){
-	d = bno055_getVectorEuler();
-	BNO055.goc_ht[0] = d.x;
-	BNO055.delta_goc[0] = BNO055.goc_ht[0] - BNO055.goc_trc[0];
-	if (BNO055.delta_goc[0] > 180) BNO055.delta_goc[0] -= 360;
-	if (BNO055.delta_goc[0] < -180) BNO055.delta_goc[0] += 360;
-	BNO055.goc_tong[0] += BNO055.delta_goc[0];
-	BNO055.goc_trc[0] = BNO055.goc_ht[0];
-
-	BNO055.goc_ht[1] = d.z;
-	BNO055.delta_goc[1] = BNO055.goc_ht[1] - BNO055.goc_trc[1];
-	if (BNO055.delta_goc[1] > 180) BNO055.delta_goc[1] -= 360;
-	if (BNO055.delta_goc[1] < -180) BNO055.delta_goc[1] += 360;
-	BNO055.goc_tong[1] += BNO055.delta_goc[1];
-	BNO055.goc_trc[1] = BNO055.goc_ht[1];
-}
+//void Read_IMU(){
+//	d = bno055_getVectorEuler();
+//	BNO055.goc_ht[0] = d.x;
+//	BNO055.delta_goc[0] = BNO055.goc_ht[0] - BNO055.goc_trc[0];
+//	if (BNO055.delta_goc[0] > 180) BNO055.delta_goc[0] -= 360;
+//	if (BNO055.delta_goc[0] < -180) BNO055.delta_goc[0] += 360;
+//	if (BNO055.delta_goc[0] > -1 && BNO055.delta_goc[0] < 1) BNO055.delta_goc[0] = 0; // deadband loc nhieu
+//	BNO055.goc_tong[0] += BNO055.delta_goc[0];
+//	BNO055.goc_trc[0] = BNO055.goc_ht[0];
+//
+//	BNO055.goc_ht[1] = d.z;
+//	BNO055.delta_goc[1] = BNO055.goc_ht[1] - BNO055.goc_trc[1];
+//	if (BNO055.delta_goc[1] > 180) BNO055.delta_goc[1] -= 360;
+//	if (BNO055.delta_goc[1] < -180) BNO055.delta_goc[1] += 360;
+//	if (BNO055.delta_goc[1] > -1 && BNO055.delta_goc[1] < 1) BNO055.delta_goc[1] = 0; // deadband loc nhieu
+//	BNO055.goc_tong[1] += BNO055.delta_goc[1];
+//	BNO055.goc_trc[1] = BNO055.goc_ht[1];
+//}
 
 
 
@@ -222,6 +226,8 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc)
 //	for(int i=0;i<300;i++);
 	HAL_ADC_Start_DMA(&hadc1, &adc, 1);
 }
+
+
 uint8_t Chuan_hoa(float x){
 	if(x>=255) x=255;
 	if(x<=0) x=0;
@@ -250,19 +256,25 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)  // Doc HC12
 		flag_read_imu = 1;
 
 		if(rx_hc12[2]==8){
-			goc_bu-=0.5;
+//			goc_bu-=0.5;
+			// xu li nang ha
+        TxData[1]=150;
 
 		}
-		else if(rx_hc12[2]==4){
-			goc_bu+=0.5;
+//		else if(rx_hc12[2]==4){
+		else if(rx_hc12[2]==2){
+//			goc_bu+=0.5;
+			// xu li nang ha
+        TxData[1]=50;
+
 		}
 		else{
-
+			TxData[1] = 100;
 //			if(rx_hc12[2]!=pre_bt3){
 				if(rx_hc12[2]==16)add_rad=0;
-				else if(rx_hc12[2]==32) add_rad=2*pi4;
+				else if(rx_hc12[2]==32) add_rad=2*pi4; // 2
 				else if(rx_hc12[2]==64) add_rad=pii;
-				else if(rx_hc12[2]==128) add_rad=-2*pi4;
+				else if(rx_hc12[2]==128) add_rad=-2*pi4; //2
 //			}
       //pre_bt3=rx_hc12[4];
 			pre_bt3=rx_hc12[2]; // Bug 4 fix: phai luu [2] vi logic tren dung rx_hc12[2]
@@ -271,16 +283,27 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)  // Doc HC12
 
 			goc_quay=BNO055.goc_tong[0]+goc_bu - (int)(rad_dh/pii*180);
 
-			if(goc_quay>20) goc_quay=20;
-			else if(goc_quay<-20)goc_quay=-20;
+			if(goc_quay>50) goc_quay=50; // 20
+			else if(goc_quay<-50)goc_quay=-50;  //20
 			float goc_rad = ((goc_quay+BNO055.goc_tong[0]+goc_bu) * pii) / 180 ;
-			TxData[2]=Chuan_hoa( X*sin(goc_rad+pi34) + Y*cos(goc_rad+pi34)+100) + goc_quay;
-			TxData[3]=Chuan_hoa( X*sin(goc_rad-pi34) + Y*cos(goc_rad-pi34)+100) +goc_quay;
-			TxData[4]=Chuan_hoa(X*sin(goc_rad-pi4) + Y*cos(goc_rad-pi4)+100) +goc_quay;
-			TxData[5]=Chuan_hoa(X*sin(goc_rad+pi4) + Y*cos(goc_rad+pi4)+100) + goc_quay;
+//			TxData[2]=Chuan_hoa( X*sin(goc_rad+pi34) + Y*cos(goc_rad+pi34)+100 + goc_quay);
+//			TxData[3]=Chuan_hoa( X*sin(goc_rad-pi34) + Y*cos(goc_rad-pi34)+100 + goc_quay);
+//			TxData[4]=Chuan_hoa(X*sin(goc_rad-pi4) + Y*cos(goc_rad-pi4)+100 + goc_quay);
+//			TxData[5]=Chuan_hoa(X*sin(goc_rad+pi4) + Y*cos(goc_rad+pi4)+100 + goc_quay);
+
+			TxData[2]=Chuan_hoa(X*sin(goc_rad-pi4) + Y*cos(goc_rad-pi4)+100 + goc_quay);
+			TxData[3]=Chuan_hoa(X*sin(goc_rad+pi4) + Y*cos(goc_rad+pi4)+100 + goc_quay);
+			TxData[4]=Chuan_hoa( X*sin(goc_rad+pi34) + Y*cos(goc_rad+pi34)+100 + goc_quay);
+			TxData[5]=Chuan_hoa( X*sin(goc_rad-pi34) + Y*cos(goc_rad-pi34)+100 + goc_quay);
+
 		}
 		TxData[6]=db;
 		HAL_CAN_AddTxMessage(&hcan1, &TxHeader, TxData, &TxMailbox);
+
+		// Frame 2: gửi dữ liệu cho PID Board 2 (StdId=0x124)
+		// TxData2[0-7] - tự thêm chức năng cho các ID chưa sử dụng
+		TxData2[6]=db;
+		HAL_CAN_AddTxMessage(&hcan1, &TxHeader2, TxData2, &TxMailbox);
 	}
 }
 
@@ -314,8 +337,6 @@ HAL_StatusTypeDef HC12_Send_AT(char *cmd, char *expected, uint32_t timeout) {
     __HAL_UART_FLUSH_DRREGISTER(&huart3);
 
     HAL_UART_Transmit(&huart3, (uint8_t*)cmd, strlen(cmd), 100);
-    // ✅ KHÔNG delay ở đây - bắt đầu nhận ngay lập tức
-
     uint32_t start = HAL_GetTick();
     while ((HAL_GetTick() - start) < timeout && idx < 15) {
         if (HAL_UART_Receive(&huart3, &byte, 1, 50) == HAL_OK) {
@@ -399,16 +420,24 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 		HAL_UART_Receive_DMA(&huart3, &hc12, 1);
 	}
 }
+
+// Servo begin
 uint16_t AngleToPWM(uint8_t angle) {
     if (angle > 180) angle = 180;
     // Sử dụng tính toán số thực để giữ độ chính xác trước khi ép kiểu
     float pulse = (float)SERVOMIN + ((float)angle * (SERVOMAX - SERVOMIN) / 180.0f);
     return (uint16_t)pulse;
 }
+
+
 void SetServoAngle_1(uint8_t num, float angle) {
     uint16_t pwmValue = AngleToPWM(angle);
     PCA9685_SetPWM(&hi2c2,PCA9685_I2C_ADDRESS_1,num, 0, pwmValue);
 }
+
+// Servo end
+
+
 /* USER CODE END 0 */
 
 /**
@@ -475,18 +504,26 @@ int main(void)
 	  Error_Handler();
   }
   I2C1_Scan();
-//dmm
-  TxHeader.StdId = 0x123;
-  TxHeader.RTR = CAN_RTR_DATA;
-  TxHeader.IDE = CAN_ID_STD;
-  TxHeader.DLC = 8;
-  TxHeader.TransmitGlobalTime = DISABLE;
   HAL_UART_Receive_DMA(&huart3, &hc12, 1);
 	bno055_assignI2C(&hi2c1);
 	bno055_setup();
 	bno055_setOperationModeNDOF();
   PCA9685_Init(&hi2c2, PCA9685_I2C_ADDRESS_1);
   PCA9685_SetPWMFreq(&hi2c2,PCA9685_I2C_ADDRESS_1, 50.0);
+
+  // CAN Frame 1: PID Board 1 (giữ nguyên)
+  TxHeader.StdId = 0x123;
+  TxHeader.RTR = CAN_RTR_DATA;
+  TxHeader.IDE = CAN_ID_STD;
+  TxHeader.DLC = 8;
+  TxHeader.TransmitGlobalTime = DISABLE;
+
+  // CAN Frame 2: PID Board 2 (thêm mới)
+  TxHeader2.StdId = 0x124;
+  TxHeader2.RTR = CAN_RTR_DATA;
+  TxHeader2.IDE = CAN_ID_STD;
+  TxHeader2.DLC = 8;
+  TxHeader2.TransmitGlobalTime = DISABLE;
 	HAL_TIM_Base_Start_IT(&htim1);
 	HAL_TIM_Base_Start_IT(&htim8);
   /* USER CODE END 2 */
@@ -504,10 +541,12 @@ int main(void)
   	// SetServoAngle_1(0, 0);
   	// HAL_Delay(3000);
   	// Bug 1 fix: Doc IMU an toan ben ngoai ISR
-  	if(flag_read_imu){
-  		flag_read_imu = 0;
-  		Read_IMU();
-  	}
+
+
+//  	if(flag_read_imu){
+//  		flag_read_imu = 0;
+//  		Read_IMU();
+//  	}
 
   	// Test servo - xoa khi deploy that
   	// SetServoAngle_1(0, 90);
