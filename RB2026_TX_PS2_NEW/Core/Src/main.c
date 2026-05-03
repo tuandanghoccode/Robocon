@@ -210,7 +210,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	  }
 
 
-	  tx[3]=du.button[1];
+	  tx[3]= (du.button[1] >= 255) ? 254 : du.button[1];
 	  cnt_rot_pre=cnt_rot;
 
 	  // === Chức năng quay motor chip ID 2 ===
@@ -223,13 +223,13 @@ tx[0] = du.address;  // Địa chỉ bình thường (255)
 	  int16_t val_x = (int16_t)du.data[0] + (int16_t)tmp_joy[0];
 	  int16_t val_y = (int16_t)du.data[1] + (int16_t)tmp_joy[1];
 	  if(val_x < 0) val_x = 0;
-	  if(val_x > 255) val_x = 255;
+	  if(val_x > 254) val_x = 254;  // 255 = sync byte, khong duoc dung!
 	  if(val_y < 0) val_y = 0;
-	  if(val_y > 255) val_y = 255;
+	  if(val_y > 254) val_y = 254;  // 255 = sync byte, khong duoc dung!
 	  tx[1] = (uint8_t)val_x;
 	  tx[2] = (uint8_t)val_y;
 
-	  tx[4]=du.button[0];
+	  tx[4]= (du.button[0] >= 255) ? 254 : du.button[0];
 	  cnt++;
 	  if(cnt>=250) cnt=0;
 	  tx[5] = cnt;

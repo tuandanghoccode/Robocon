@@ -1,20 +1,20 @@
 /* USER CODE BEGIN Header */
 /**
-  ******************************************************************************
-  * @file           : main.c
-  * @brief          : Main program body
-  ******************************************************************************
-  * @attention
-  *
-  * Copyright (c) 2025 STMicroelectronics.
-  * All rights reserved.
-  *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
-  *
-  ******************************************************************************
-  */
+ ******************************************************************************
+ * @file           : main.c
+ * @brief          : Main program body
+ ******************************************************************************
+ * @attention
+ *
+ * Copyright (c) 2025 STMicroelectronics.
+ * All rights reserved.
+ *
+ * This software is licensed under terms that can be found in the LICENSE file
+ * in the root directory of this software component.
+ * If no LICENSE file comes with this software, it is provided AS-IS.
+ *
+ ******************************************************************************
+ */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
@@ -26,44 +26,44 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-typedef struct{
-	volatile float gtht;
-	volatile float er;
-	volatile float pre_er;
-	volatile float Kp;
-	volatile float Kd;
-	volatile float Ki;
-	volatile float d;
-	volatile float i;
-}Pid_data;
-typedef struct{
-	volatile float speed;
-	volatile long xung;
-	volatile long xung_trc;
-	volatile long xung_tmp;
-	volatile long target_xung; // Thêm biến lưu vị trí mục tiêu
-	volatile uint8_t is_holding; // Cờ báo trạng thái đang giữ vị trí
-}Encoder_data;
+typedef struct {
+  volatile float gtht;
+  volatile float er;
+  volatile float pre_er;
+  volatile float Kp;
+  volatile float Kd;
+  volatile float Ki;
+  volatile float d;
+  volatile float i;
+} Pid_data;
+typedef struct {
+  volatile float speed;
+  volatile long xung;
+  volatile long xung_trc;
+  volatile long xung_tmp;
+  volatile long target_xung;   // Thêm biến lưu vị trí mục tiêu
+  volatile uint8_t is_holding; // Cờ báo trạng thái đang giữ vị trí
+} Encoder_data;
 
-//Pid_data.Kd;
+// Pid_data.Kd;
 
-typedef struct{
-	Pid_data			*pPid_data; // con trỏ tới struct pid_data
-	Encoder_data 	*pEncoder_data;// con trỏ tới struct encoder_data
-}PID_CONTROL;
-//Pid->pPid_data.Kd
+typedef struct {
+  Pid_data *pPid_data;         // con trỏ tới struct pid_data
+  Encoder_data *pEncoder_data; // con trỏ tới struct encoder_data
+} PID_CONTROL;
+// Pid->pPid_data.Kd
 PID_CONTROL Pid;
 // PID_CONTROL Goc;
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-//2 -999 xuong (giua)
-//1 -999 lui
-//3 -999 xuong (sau)
-//4 trai (1) nhin tu mach ra dau
-//5 giua (2)
-//6 phai (3)
+// 2 -999 xuong (giua)
+// 1 -999 lui
+// 3 -999 xuong (sau)
+// 4 trai (1) nhin tu mach ra dau
+// 5 giua (2)
+// 6 phai (3)
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -86,10 +86,10 @@ CAN_RxHeaderTypeDef RxHeader;
 int MAX_SPEED = 333;
 int MAX_PWM = 7199;
 
-float output,vt;
-float tmp=0;
-float  Delta_t = 0.01;
-float Wd=0,Ks=3.2, Kg=1;
+float output, vt;
+float tmp = 0;
+float Delta_t = 0.01;
+float Wd = 0, Ks = 3.2, Kg = 1;
 volatile int Setpoint;
 
 /* USER CODE END PV */
@@ -108,120 +108,146 @@ static void MX_TIM4_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-//ID CHIP ////////////////////////////////////////////////////////////////////////////////////////////////////////
-int id=6;
+// ID CHIP
+// ////////////////////////////////////////////////////////////////////////////////////////////////////////
+int id = 5;
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-uint8_t l=0;
-//uint8_t addr[6]={0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
+uint8_t l = 0;
+// uint8_t addr[6]={0x01, 0x02, 0x03, 0x04, 0x05, 0x06};
 
 void HAL_CAN_RxFifo0MsgPendingCallback(CAN_HandleTypeDef *hcan) {
-    if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
-        if (RxHeader.StdId == 0x123) {
-        	Setpoint = (RxData[6]-7.5)*(RxData[id-1]-100);
-        	l=1-l;
-					if(l)HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-					if(Setpoint>=MAX_SPEED)Setpoint=MAX_SPEED;
-					if(Setpoint<=-MAX_SPEED)Setpoint=-MAX_SPEED;
-        }
+  if (HAL_CAN_GetRxMessage(hcan, CAN_RX_FIFO0, &RxHeader, RxData) == HAL_OK) {
+    if (RxHeader.StdId == 0x123 || RxHeader.StdId == 0x124) {
+      Setpoint = (RxData[6] - 7.5) * (RxData[id - 1] - 100);
+      l = 1 - l;
+      if (l)
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+      if (Setpoint >= MAX_SPEED)
+        Setpoint = MAX_SPEED;
+      if (Setpoint <= -MAX_SPEED)
+        Setpoint = -MAX_SPEED;
     }
+  }
 }
 
-void PID_Control(PID_CONTROL *pid, int setpoint){
-	static int prev_setpoint_input = 0;
-	int active_setpoint = setpoint;
+void PID_Control(PID_CONTROL *pid, int setpoint) {
+  static int prev_setpoint_input = 0;
+  int active_setpoint = setpoint;
 
-	// Tính tốc độ hiện tại
-	pid->pEncoder_data->speed =(pid->pEncoder_data->xung-pid->pEncoder_data->xung_trc)/(1000.0f*Delta_t)*60.0f;
-	pid->pPid_data->gtht = pid->pEncoder_data->speed;
+  // Tính tốc độ hiện tại
+  pid->pEncoder_data->speed =
+      (pid->pEncoder_data->xung - pid->pEncoder_data->xung_trc) /
+      (1000.0f * Delta_t) * 60.0f;
+  pid->pPid_data->gtht = pid->pEncoder_data->speed;
 
-	// Kỹ thuật PID Cascade: Khi tốc độ yêu cầu = 0, chuyển sang PID Vị trí
-	if (setpoint == 0) {
-		// Vừa chuyển từ trạng thái chạy sang dừng -> chốt vị trí hiện tại
-		if (prev_setpoint_input != 0) {
-			pid->pEncoder_data->target_xung = pid->pEncoder_data->xung;
-			pid->pEncoder_data->is_holding = 1;
-		}
-		
-		if (pid->pEncoder_data->is_holding) {
-			long pos_error = pid->pEncoder_data->target_xung - pid->pEncoder_data->xung;
-			
-			// Dùng bộ điều khiển P (Proportional) cho vị trí để sinh ra setpoint vận tốc
-			float K_pos = 1.5f; // Hệ số P vị trí - có thể tăng/giảm để phản ứng mạnh/yếu
-			active_setpoint = (int)(pos_error * K_pos);
-			
-			// Giới hạn vận tốc bù trừ để không giật mạnh (Max tốc bù là 100, max speed xe là 333)
-			if (active_setpoint > 100) active_setpoint = 100;
-			if (active_setpoint < -100) active_setpoint = -100;
-			
-			// Deadband (chấp nhận sai số nhỏ để tránh dao động liên tục)
-			if (pos_error >= -2 && pos_error <= 2) {
-				active_setpoint = 0;
-				pid->pPid_data->i = 0; // Xóa tích phân để động cơ nghỉ ngơi thực sự
-			}
-		}
-	} else {
-		// Đang có lệnh chạy tốc độ bình thường
-		pid->pEncoder_data->is_holding = 0;
-	}
+  // Kỹ thuật PID Cascade: Khi tốc độ yêu cầu = 0, chuyển sang PID Vị trí
+  if (setpoint == 0) {
+    // Vừa chuyển từ trạng thái chạy sang dừng -> chốt vị trí hiện tại
+    if (prev_setpoint_input != 0) {
+      pid->pEncoder_data->target_xung = pid->pEncoder_data->xung;
+      pid->pEncoder_data->is_holding = 1;
+    }
 
-	// Reset tích phân khi đảo chiều (active_setpoint đổi dấu)
-	static int prev_active_setpoint = 0;
-	if ((active_setpoint > 0 && prev_active_setpoint < 0) || (active_setpoint < 0 && prev_active_setpoint > 0)){
-		pid->pPid_data->i = 0;
-	}
+    if (pid->pEncoder_data->is_holding) {
+      long pos_error =
+          pid->pEncoder_data->target_xung - pid->pEncoder_data->xung;
 
-	prev_setpoint_input = setpoint;
-	prev_active_setpoint = active_setpoint;
+      // Dùng bộ điều khiển P (Proportional) cho vị trí để sinh ra setpoint vận
+      // tốc
+      float K_pos =
+          1.5f; // Hệ số P vị trí - có thể tăng/giảm để phản ứng mạnh/yếu
+      active_setpoint = (int)(pos_error * K_pos);
 
-	// --- Tính toán vòng PID Vận Tốc ---
-	pid->pPid_data->er = active_setpoint - pid->pPid_data->gtht;
-	pid->pPid_data->i += pid->pPid_data->er * Delta_t;
+      // Giới hạn vận tốc bù trừ để không giật mạnh (Max tốc bù là 100, max
+      // speed xe là 333)
+      if (active_setpoint > 100)
+        active_setpoint = 100;
+      if (active_setpoint < -100)
+        active_setpoint = -100;
 
-	if(pid->pPid_data->i > 3000) pid->pPid_data->i = 3000;   // chống tích phân bão hòa
-	else if(pid->pPid_data->i < -3000) pid->pPid_data->i = -3000;
+      // Deadband (chấp nhận sai số nhỏ để tránh dao động liên tục)
+      if (pos_error >= -5 && pos_error <= 5) {
+        active_setpoint = 0;
+        pid->pPid_data->i = 0; // Xóa tích phân để động cơ nghỉ ngơi thực sự
+      }
+    }
+  } else {
+    // Đang có lệnh chạy tốc độ bình thường
+    pid->pEncoder_data->is_holding = 0;
+  }
 
-	pid->pPid_data->d = (pid->pPid_data->er - pid->pPid_data->pre_er)/Delta_t;
-	output = MAX_PWM*(pid->pPid_data->Kp * pid->pPid_data->er + pid->pPid_data->Kd * pid->pPid_data->d + pid->pPid_data->Ki * pid->pPid_data->i)/MAX_SPEED;
-	pid->pEncoder_data->xung_trc = pid->pEncoder_data->xung;
-	pid->pPid_data->pre_er = pid->pPid_data->er;
-	if(output>MAX_PWM)output=MAX_PWM;
-	else if(output<-MAX_PWM)output=-MAX_PWM;
+  // Reset tích phân khi đảo chiều (active_setpoint đổi dấu)
+  static int prev_active_setpoint = 0;
+  if ((active_setpoint > 0 && prev_active_setpoint < 0) ||
+      (active_setpoint < 0 && prev_active_setpoint > 0)) {
+    pid->pPid_data->i = 0;
+  }
+
+  prev_setpoint_input = setpoint;
+  prev_active_setpoint = active_setpoint;
+
+  // --- Tính toán vòng PID Vận Tốc ---
+  pid->pPid_data->er = active_setpoint - pid->pPid_data->gtht;
+  pid->pPid_data->i += pid->pPid_data->er * Delta_t;
+
+  if (pid->pPid_data->i > 3000)
+    pid->pPid_data->i = 3000; // chống tích phân bão hòa
+  else if (pid->pPid_data->i < -3000)
+    pid->pPid_data->i = -3000;
+
+  pid->pPid_data->d = (pid->pPid_data->er - pid->pPid_data->pre_er) / Delta_t;
+  output = MAX_PWM *
+           (pid->pPid_data->Kp * pid->pPid_data->er +
+            pid->pPid_data->Kd * pid->pPid_data->d +
+            pid->pPid_data->Ki * pid->pPid_data->i) /
+           MAX_SPEED;
+  pid->pEncoder_data->xung_trc = pid->pEncoder_data->xung;
+  pid->pPid_data->pre_er = pid->pPid_data->er;
+  if (output > MAX_PWM)
+    output = MAX_PWM;
+  else if (output < -MAX_PWM)
+    output = -MAX_PWM;
 }
- // PID_Control cho ra output
-void quay_thuan(){
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,fabs(output));//**__HAL_TIM_SET_COMPARE : set giá trị so sánh
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_2,0);
-
+// PID_Control cho ra output
+void quay_thuan() {
+  __HAL_TIM_SET_COMPARE(
+      &htim2, TIM_CHANNEL_1,
+      fabs(output)); //**__HAL_TIM_SET_COMPARE : set giá trị so sánh
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
 }
-void quay_nghich(){
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_2,fabs(output));
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,0);
+void quay_nghich() {
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, fabs(output));
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
 }
-void dung(){
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_1,0);
-	__HAL_TIM_SET_COMPARE(&htim2,TIM_CHANNEL_2,0);
+void dung() {
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_1, 0);
+  __HAL_TIM_SET_COMPARE(&htim2, TIM_CHANNEL_2, 0);
 }
-void dk(){
-	if(output>=0) quay_thuan();
-	else quay_nghich();
-}
-
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
-	if(htim->Instance == TIM4){
-		// Đọc encoder bằng delta method — xử lý cả tràn số tự động nhờ ép kiểu int16_t
-		uint16_t cur = __HAL_TIM_GET_COUNTER(&htim3);
-		int16_t delta = (int16_t)(cur - (uint16_t)Pid.pEncoder_data->xung_tmp);
-		Pid.pEncoder_data->xung += delta;
-		Pid.pEncoder_data->xung_tmp = cur;
-
-		PID_Control(&Pid, Setpoint);
-		dk();
-	}
+void dk() {
+  if (output >= 0)
+    quay_thuan();
+  else
+    quay_nghich();
 }
 
-void PID_CONTROL_INIT(PID_CONTROL *Pid, Pid_data *pid_data, Encoder_data *en_data){
-	Pid->pEncoder_data = en_data;
-	Pid->pPid_data = pid_data;
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+  if (htim->Instance == TIM4) {
+    // Đọc encoder bằng delta method — xử lý cả tràn số tự động nhờ ép kiểu
+    // int16_t
+    uint16_t cur = __HAL_TIM_GET_COUNTER(&htim3);
+    int16_t delta = (int16_t)(cur - (uint16_t)Pid.pEncoder_data->xung_tmp);
+    Pid.pEncoder_data->xung += delta;
+    Pid.pEncoder_data->xung_tmp = cur;
+
+    PID_Control(&Pid, Setpoint);
+    dk();
+  }
+}
+
+void PID_CONTROL_INIT(PID_CONTROL *Pid, Pid_data *pid_data,
+                      Encoder_data *en_data) {
+  Pid->pEncoder_data = en_data;
+  Pid->pPid_data = pid_data;
 }
 /* USER CODE END 0 */
 
@@ -234,8 +260,8 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
 
-	Pid_data			p_data={0, 0, 0, 0.8, 0.001,10, 0,0};//Kp=0.6, Ki=10, Kd=0.001
-	Encoder_data		e_data={0, 0, 0, 0, 0, 0};
+  Pid_data p_data = {0, 0, 0, 0.8, 0.001, 10, 0, 0}; // Kp=0.6, Ki=10, Kd=0.001
+  Encoder_data e_data = {0, 0, 0, 0, 0, 0};
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -263,32 +289,30 @@ int main(void)
   MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 
-	// Khởi động CAN
-	if (HAL_CAN_Start(&hcan) != HAL_OK) Error_Handler();
-	HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
+  // Khởi động CAN
+  if (HAL_CAN_Start(&hcan) != HAL_OK)
+    Error_Handler();
+  HAL_CAN_ActivateNotification(&hcan, CAN_IT_RX_FIFO0_MSG_PENDING);
 
-	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_1);
-	HAL_TIM_PWM_Start(&htim2,TIM_CHANNEL_2);
-	PID_CONTROL_INIT(&Pid, &p_data, &e_data);
-	HAL_TIM_Encoder_Start(&htim3,TIM_CHANNEL_ALL); // Dùng Start thường, không cần IT
-	HAL_TIM_Base_Start_IT(&htim4);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_1);
+  HAL_TIM_PWM_Start(&htim2, TIM_CHANNEL_2);
+  PID_CONTROL_INIT(&Pid, &p_data, &e_data);
+  HAL_TIM_Encoder_Start(&htim3,
+                        TIM_CHANNEL_ALL); // Dùng Start thường, không cần IT
+  HAL_TIM_Base_Start_IT(&htim4);
 
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
-  while (1)
-  {
+  while (1) {
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
-
-
-
-//	  Setpoint=150;
-	  // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
-	  // HAL_Delay(200);
+    //	  Setpoint=150;
+    // HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+    // HAL_Delay(200);
   }
   /* USER CODE END 3 */
 }
@@ -364,28 +388,31 @@ static void MX_CAN_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN CAN_Init 2 */
-//  hcan.Init.Mode = CAN_MODE_NORMAL;
-//  if (id == 1) {
-//      hcan.Init.Mode = CAN_MODE_NORMAL;
-//    } else {
-//      hcan.Init.Mode = CAN_MODE_SILENT;
-//    }
+  //  hcan.Init.Mode = CAN_MODE_NORMAL;
+  //  if (id == 1) {
+  //      hcan.Init.Mode = CAN_MODE_NORMAL;
+  //    } else {
+  //      hcan.Init.Mode = CAN_MODE_SILENT;
+  //    }
   CAN_FilterTypeDef sFilterConfig;
-  sFilterConfig.FilterBank = 0;  // Bank 0 cho CAN1
+  sFilterConfig.FilterBank = 0; // Bank 0 cho CAN1
   sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
   sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-  sFilterConfig.FilterIdHigh = 0x123 << 5;  // ID của transmitter (0x123 << 5 = 0x910)
+  sFilterConfig.FilterIdHigh = 0x123
+                               << 5; // ID của transmitter (0x123 << 5 = 0x910)
   sFilterConfig.FilterIdLow = 0x0000;
-//  sFilterConfig.FilterMaskIdHigh = 0x0000;  // Mask chặt chẽ cho std ID (thay 0xFFFF nếu muốn loose)
-  sFilterConfig.FilterMaskIdHigh =0xFFE0;
+  //  sFilterConfig.FilterMaskIdHigh = 0x0000;  // Mask chặt chẽ cho std ID
+  //  (thay 0xFFFF nếu muốn loose)
+  sFilterConfig.FilterMaskIdHigh =
+      0x0000; // Đổi thành 0x0000 để nhận mọi ID (0x123, 0x124,...)
   sFilterConfig.FilterMaskIdLow = 0x0000;
   sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-  sFilterConfig.FilterActivation = ENABLE;  // BẮT BUỘC ENABLE!
+  sFilterConfig.FilterActivation = ENABLE; // BẮT BUỘC ENABLE!
 
   if (HAL_CAN_ConfigFilter(&hcan, &sFilterConfig) != HAL_OK) {
-      Error_Handler();  // Thêm: Báo lỗi nếu filter fail
+    Error_Handler(); // Thêm: Báo lỗi nếu filter fail
   }
-//  hcan.Instance->BTR |= CAN_BTR_SILM;
+  //  hcan.Instance->BTR |= CAN_BTR_SILM;
   /* USER CODE END CAN_Init 2 */
 
 }
@@ -471,7 +498,7 @@ static void MX_TIM3_Init(void)
   sConfig.IC1Polarity = TIM_ICPOLARITY_RISING;
   sConfig.IC1Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC1Prescaler = TIM_ICPSC_DIV1;
-  sConfig.IC1Filter = 0;
+  sConfig.IC1Filter = 4;
   sConfig.IC2Polarity = TIM_ICPOLARITY_FALLING;
   sConfig.IC2Selection = TIM_ICSELECTION_DIRECTTI;
   sConfig.IC2Prescaler = TIM_ICPSC_DIV1;
@@ -626,8 +653,7 @@ void Error_Handler(void)
   /* USER CODE BEGIN Error_Handler_Debug */
   /* User can add his own implementation to report the HAL error return state */
   __disable_irq();
-  while (1)
-  {
+  while (1) {
   }
   /* USER CODE END Error_Handler_Debug */
 }
@@ -642,8 +668,9 @@ void Error_Handler(void)
 void assert_failed(uint8_t *file, uint32_t line)
 {
   /* USER CODE BEGIN 6 */
-  /* User can add his own implementation to report the file name and line number,
-     ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
+  /* User can add his own implementation to report the file name and line
+     number, ex: printf("Wrong parameters value: file %s on line %d\r\n", file,
+     line) */
   /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */
